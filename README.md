@@ -1,5 +1,10 @@
 # AHPA: Adaptive Hierarchical Representation Alignment
 
+> 🔔 **Repository Status Notification**
+> To comply with the ongoing peer-review process, the code framework will be released upon the official acceptance of our paper.
+> *We appreciate your patience and support! Stay tuned by starring this repository ⭐.*
+
+---
 This repository is the official implementation of the AHPA (Adaptive Hierarchical Representation Alignment) method, based on SiT and REPA. It demonstrates how dynamic routing over intermediate representations can enhance representation alignment.
 
 ## Dependency Setup
