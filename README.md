@@ -1,54 +1,28 @@
-# AHPA: Adaptive Hierarchical Representation Alignment
+# AHPA: Adaptive Hierarchical Prior Alignment for Diffusion Transformers
 
-> 🔔 **Repository Status Notification**
-> To comply with the ongoing peer-review process, the code framework will be released upon the official acceptance of our paper.
-> *We appreciate your patience and support! Stay tuned by starring this repository ⭐.*
+This repo contains the Implementation of AHPA.
 
----
-This repository is the official implementation of the AHPA (Adaptive Hierarchical Representation Alignment) method, based on SiT and REPA. It demonstrates how dynamic routing over intermediate representations can enhance representation alignment.
+**✨NeurIPS 2026 Poster** · [Paper](https://arxiv.org/pdf/2605.03317)
 
-## Dependency Setup
+## Setup
 
 ```bash
-cd AHPA
+conda create -n ahpa python=3.10 -y
+conda activate ahpa
+pip install -r environment/requirements.txt
 
-# Create environment (Python 3.10+)
-conda create -n ahpa python=3.10 -y && conda activate ahpa
-
-# Install dependencies (same as iREPA)
-pip install -r requirements.txt
+hf download REPA-E/iREPA-collections --include "data/**" --local-dir .
+hf download REPA-E/iREPA-collections --include "pretrained_models/**" --local-dir .
 ```
 
-## Data & Pretrained Weights 
+## VAE Feature Mode
 
-You will need the pre-cached ImageNet latents and VAE/Encoder pretrained models.
+AHPA automatically switches between online VAE feature extraction and preprocessed VAE features according to `cached_vae_feature_dir`:
 
-Download the full pre-processed dataset and weights from the iREPA/REPA-E collections to the current directory:
-```bash
-hf download REPA-E/iREPA-collections --include "data/**" --local-dir "."
-hf download REPA-E/iREPA-collections --include "pretrained_models/**" --local-dir "."
-hf download REPA-E/iREPA-collections --include "VIRTUAL_imagenet256_labeled.npz" --local-dir "."
-```
+- If `cached_vae_feature_dir` is empty or unset, the frozen VAE extracts the hierarchical target features online during training. This is the default mode.
+- If `cached_vae_feature_dir` points to a preprocessed feature directory, training loads the cached features directly.
 
-
-### Folder Structure
-Ensure your workspace looks like this:
-```text
-AHPA/
-├── data/
-│   ├── imagenet-latents-images/
-│   └── imagenet-latents-sdvae-ft-mse-f8d4/
-├── pretrained_models/
-│   ├── sdvae-ft-mse-f8d4.pt
-│   └── sdvae-ft-mse-f8d4-latents-stats.pt
-├── VIRTUAL_imagenet256_labeled.npz
-├── ldm
-└── guided-diffusion/
-    └── evaluations/evaluator_batch.py
-```
-
-### Pre-extract VAE Features (Optional but Recommended)
-To significantly speed up training, we recommend pre-extracting the necessary VAE features. We provide a script to do this in distributed fashion.
+To use cached features, preprocess them first:
 
 ```bash
 cd ldm
@@ -58,94 +32,45 @@ torchrun --nproc_per_node=8 extract_vae_features.py \
   --vae-ckpt ../pretrained_models/sdvae-ft-mse-f8d4.pt \
   --batch-size 64
 ```
-Once extracted, you can append `--cached-vae-feature-dir ../data/vae_layer_features` to your training commands to skip online extraction.
 
-## Running the Pipeline
+Then add the cache directory to `configs/ahpa.yaml` before running the normal training command:
 
-This repository provides instructions for Latent Diffusion (SiT) experiments. All code lies within the `ldm` directory.
-
-
-### One-Click Reproduction Pipeline
-
-We provide a convenient bash script (`run_ahpa.sh`) that automates the entire pipeline: Training -> Generation -> Evaluation chronologically.
-
-```bash
-cd ldm
-bash run_ahpa.sh
-```
-You can configure your desired experiments and models within the `run_ahpa.sh`.
-
-### 1. Training
-
-To train the models with different loss modes (AHPA, REPA, SRA2):
-
-**AHPA**
-```bash
-cd ldm
-accelerate launch train.py --config configs/ahpa.yaml \
-  --model "SiT-XL/2" \
-  --encoder-depth 7 \
-  --data-dir ../data \
-  --exp-name "ahpa-sit-xl" \
-  --max-train-steps 400000 \
-  --learning-rate 2e-4 \
-  --max-grad-norm 2.0 \
-  --batch-size 256
+```yaml
+cached_vae_feature_dir: ../data/vae_layer_features
 ```
 
-**baseline REPA**
+## Train
+
+Run AHPA:
+
 ```bash
 cd ldm
-accelerate launch train.py --config configs/repa.yaml \
-  --model "SiT-XL/2" \
-  --encoder-depth 7 \
-  --data-dir ../data \
-  --exp-name "repa-sit-xl" \
-  --max-train-steps 400000 \
-  --learning-rate 2e-4 \
-  --max-grad-norm 2.0 \
-  --batch-size 256
+MODE=ahpa bash run_ahpa.sh
 ```
 
-**SRA2**
+Run SRA2:
+
 ```bash
 cd ldm
-accelerate launch train.py --config configs/sra2.yaml \
-  --model "SiT-XL/2" \
-  --encoder-depth 7 \
-  --data-dir ../data \
-  --exp-name "sra2-sit-xl" \
-  --max-train-steps 400000 \
-  --learning-rate 2e-4 \
-  --max-grad-norm 2.0 \
-  --batch-size 256
+MODE=sra2 bash run_ahpa.sh
 ```
 
-### 2. Generation
+Set `NGPU`, `MODEL`, `DATA_DIR`, `EXP_NAME`, or `MAX_TRAIN_STEPS` before the command to override the defaults. In AHPA, the anchor term assists router training; it is not the main method contribution.
 
-To generate samples using a trained checkpoint:
+## Generate
+
 ```bash
 cd ldm
-python generate_all.py \
-  --exp-name "ahpa-sit-xl" \
-  --model "SiT-XL/2" \
-  --steps 0400000 \
+torchrun --nproc_per_node=8 generate.py \
+  --model SiT-XL/2 \
+  --ckpt exps/ahpa-sit-xl/checkpoints/0400000.pt \
   --sample-dir samples \
   --num-samples 50000 \
-  --nproc 8 \
-  --encoder-depth 7 \
-  --sample-list-out "ahpa-sit-xl_samples.txt"
+  --encoder-depth 7
 ```
 
-### 3. Evaluation (FID/IS)
+Generated images are saved as PNG files under `samples/`.
 
-We use the ADM evaluation suite to compute ImageNet 256x256 metrics. Make sure `VIRTUAL_imagenet256_labeled.npz` is in the root directory. 
+## Evaluation
 
-```bash
-python ../guided-diffusion/evaluations/evaluator_batch.py \
-  --ref_batch ../VIRTUAL_imagenet256_labeled.npz \
-  --sample_list ahpa-sit-xl_samples.txt \
-  --log eval_results_ahpa-sit-xl.log
-```
-
-
+For ImageNet FID/IS evaluation, use the ADM evaluation suite from OpenAI's [`guided-diffusion`](https://github.com/openai/guided-diffusion/tree/main/evaluations) repository and follow its instructions to prepare the reference statistics and sample archive.

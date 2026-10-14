@@ -1,0 +1,5 @@
+# AHPA configuration
+projection_layer_type: conv
+proj_coeff: "1.0"
+spnorm_method: zscore
+loss_mode: ahpa

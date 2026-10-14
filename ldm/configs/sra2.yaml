@@ -1,0 +1,5 @@
+# SRA2 configuration
+projection_layer_type: mlp_5
+proj_coeff: "1.0"
+spnorm_method: none
+loss_mode: sra2
